@@ -5,7 +5,7 @@ on:
     branches: ["main", "develop"]
   pull_request:
     branches: ["main"]
-  workflow_dispatch: 
+  workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.10"
@@ -95,18 +95,18 @@ jobs:
           if [ -f test-reports/coverage.xml ]; then
             echo " **Coverage Report disponível nos artefatos**" >> $GITHUB_STEP_SUMMARY
           fi
- 
+
   build:
     name: " Build & Package"
     runs-on: ubuntu-latest
     steps:
-      - name:  Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-      - name:  Set up Python ${{ env.PYTHON_VERSION }}
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - name:  Install build dependencies
+      - name: Install build dependencies
         run: |
           echo " Instalando software necessário para build..."
           python -m pip install --upgrade pip
@@ -116,14 +116,14 @@ jobs:
           else
             pip install pandas
           fi
-      - name:  Make build script executable
+      - name: Make build script executable
         run: |
           chmod +x scripts/build_package.py
-      - name:  Build application package
+      - name: Build application package
         run: |
           echo " Executando script de empacotamento..."
           python scripts/build_package.py
-      - name:  Generate build summary
+      - name: Generate build summary
         run: |
           echo "##  Build Results Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -143,7 +143,7 @@ jobs:
           echo "- Dependências (requirements.txt)" >> $GITHUB_STEP_SUMMARY
           echo "- Documentação (README.md, INSTALL.md)" >> $GITHUB_STEP_SUMMARY
           echo "- Informações da build (build-info.json)" >> $GITHUB_STEP_SUMMARY
-      - name:  Upload build artifacts
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: application-packages
@@ -152,3 +152,81 @@ jobs:
             crocodile-analyzer-*.tar.gz
             dist/
           retention-days: 90
+
+  notification:
+    name: "Notification"
+    runs-on: ubuntu-latest
+    needs: [tests, build]
+    if: always()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install notification dependencies
+        run: |
+          echo " Instalando dependências para notificação..."
+          python -m pip install --upgrade pip
+
+      - name: Make notification script executable
+        run: |
+          chmod +x scripts/send_notification.py
+
+      - name: Determine pipeline status
+        id: status
+        run: |
+          TESTS_STATUS="${{ needs.tests.result }}"
+          BUILD_STATUS="${{ needs.build.result }}"
+
+          echo "Tests Status: $TESTS_STATUS"
+          echo "Build Status: $BUILD_STATUS"
+
+          if [[ "$TESTS_STATUS" == "success" && "$BUILD_STATUS" == "success" ]]; then
+            echo "PIPELINE_STATUS=SUCCESS" >> $GITHUB_ENV
+            echo "status=SUCCESS" >> $GITHUB_OUTPUT
+          else
+            echo "PIPELINE_STATUS=FAILURE" >> $GITHUB_ENV
+            echo "status=FAILURE" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send pipeline notification email
+        env:
+          PIPELINE_EMAIL_PASSWORD: ${{ secrets.PIPELINE_EMAIL_PASSWORD }}
+          PIPELINE_EMAIL_RECIPIENT: ${{ secrets.PIPELINE_EMAIL_RECIPIENT }}
+          PIPELINE_EMAIL_SENDER: ${{ secrets.PIPELINE_EMAIL_SENDER }}
+          PIPELINE_SMTP_SERVER: ${{ secrets.PIPELINE_SMTP_SERVER }}
+          PIPELINE_SMTP_PORT: ${{ secrets.PIPELINE_SMTP_PORT }}
+          PIPELINE_STATUS: ${{ env.PIPELINE_STATUS }}
+        run: |
+          echo " Enviando notificação por email..."
+          python scripts/send_notification.py ${{ env.PIPELINE_STATUS }}
+
+      - name: Generate final pipeline summary
+        run: |
+          echo "## Pipeline Final Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status Geral:** ${{ env.PIPELINE_STATUS }} ${{ env.PIPELINE_STATUS == 'SUCCESS' && '✅' || '❌' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status | Descrição |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|-----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ needs.tests.result }} | Execução de 20+ testes unitários |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ needs.build.result }} | Empacotamento da aplicação |" >> $GITHUB_STEP_SUMMARY
+          echo "| Notification | ${{ job.status }} | Envio de notificação por email |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Projeto:** C14 - Atividade Avaliativa - Pipelines" >> $GITHUB_STEP_SUMMARY
+          echo "**Email enviado para:** ${{ secrets.PIPELINE_EMAIL_RECIPIENT }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Requisitos Atendidos:" >> $GITHUB_STEP_SUMMARY
+          echo "- 20+ cenários de teste unitário/mock" >> $GITHUB_STEP_SUMMARY
+          echo "- Pipeline com 3 jobs diferentes" >> $GITHUB_STEP_SUMMARY
+          echo "- Job executando em paralelo (Build)" >> $GITHUB_STEP_SUMMARY
+          echo "- Artefatos armazenados (testes + pacotes)" >> $GITHUB_STEP_SUMMARY
+          echo "- Script de notificação por email" >> $GITHUB_STEP_SUMMARY
+          echo "- Email usando variáveis de ambiente" >> $GITHUB_STEP_SUMMARY
+          echo "- Software instalado via script" >> $GITHUB_STEP_SUMMARY
+          echo "- Informação de sucesso/falha" >> $GITHUB_STEP_SUMMARY
